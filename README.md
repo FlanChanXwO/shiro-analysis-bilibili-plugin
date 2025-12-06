@@ -17,17 +17,17 @@
 
 ## 效果展示
 ### 视频分析
-![assets/Screenshot 2025-12-06 210651.png](assets/Screenshot 2025-12-06 210622.png)
+![assets/1.png](assets/1.png)
 ### 专栏分析
-![assets/Screenshot 2025-12-06 210635.png](assets/Screenshot 2025-12-06 210635.png)
+![assets/2.png](assets/2.png)
 ### 番剧分析
-![assets/Screenshot 2025-12-06 210700.png](assets/Screenshot 2025-12-06 210700.png)
+![assets/3.png](assets/3.png)
 ### 动态分析
-![assets/Screenshot 2025-12-06 211112.png](assets/Screenshot 2025-12-06 211112.png)
+![assets/5.png](assets/5.png)
 ### 直播间分析
-![assets/Screenshot 2025-12-06 211200.png](assets/Screenshot 2025-12-06 211200.png)
+![assets/6.png](assets/6.png)
 ### 短链识别
-![assets/Screenshot 2025-12-06 210738.png](assets/Screenshot 2025-12-06 210738.png)
+![assets/4.png](assets/4.png)
 
 
 ## 配置说明
