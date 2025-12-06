@@ -11,6 +11,10 @@
 下载 jar 包并放入插件扫描路径中\
 详细参考文档 https://misakatat.github.io/shiro-docs/#%E5%8A%A0%E8%BD%BD%E5%A4%96%E9%83%A8%E6%8F%92%E4%BB%B6
 
+## 注意事项
+视频下载功能需要安装 `ffmpeg`，请确保 `ffmpeg` 可执行文件在系统 PATH 中。\
+如果你是windows用户，你可以通过`winget`工具进行`winget install ffmpeg`来安装 `ffmpeg`。\
+
 ## 效果展示
 ### 视频分析
 ![assets/Screenshot 2025-12-06 210651.png](assets/Screenshot 2025-12-06 210622.png)
