@@ -6,7 +6,6 @@
 
 `AnalysisBilibiliPlugin` 是一个基于 Spring Boot 3 和 Shiro 针对 B 站内容的插件，支持视频、动态、专栏和直播分析。  
 插件采用 **即放即用** 机制：只需将插件 jar 放入插件目录，Bot 会自动加载，无需导入依赖或配置 Spring。
----
 
 ## 如何使用
 下载 jar 包并放入插件扫描路径中\
