@@ -11,7 +11,7 @@
     <packaging>jar</packaging>
     <groupId>com.gitub</groupId>
     <artifactId>shiro-analysis-bilibili-plugin</artifactId>
-    <version>0.0.1</version>
+    <version>1.0.0</version>
     <name>shiro-analysis-bilibili-plugin</name>
     <description>shiro-analysis-bilibili-plugin</description>
     <url/>

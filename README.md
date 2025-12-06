@@ -1,4 +1,4 @@
-![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
+![License](https://img.shields.io/badge/license-MIT-blue)
 ![Spring Boot Version](https://img.shields.io/badge/SpringBootVersion-SpringBoot3-brightgreen)
 ![Java Version](https://img.shields.io/badge/JavaVersion-17+-orange)
 ![Shiro Framework](https://img.shields.io/badge/基于-Shiro框架-green)
@@ -53,6 +53,9 @@ reanalysisTimeSeconds=3
 | imagesSize           | String   | ""               | 图片尺寸                               |
 | coverImagesSize      | String   | ""               | 封面图片尺寸                           |
 | reanalysisTimeSeconds| long<br/>     | 3                | 重新分析时间间隔                       |
+
+## 许可证
+本项目采用 MIT 许可证，详情请参阅 [LICENSE](LICENSE) 文件。
 
 ## 贡献与反馈
 欢迎任何形式的贡献与反馈！
