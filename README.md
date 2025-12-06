@@ -11,6 +11,21 @@
 下载 jar 包并放入插件扫描路径中\
 详细参考文档 https://misakatat.github.io/shiro-docs/#%E5%8A%A0%E8%BD%BD%E5%A4%96%E9%83%A8%E6%8F%92%E4%BB%B6
 
+## 效果展示
+### 视频分析
+![assets/Screenshot 2025-12-06 210651.png](assets/Screenshot 2025-12-06 210622.png)
+### 专栏分析
+![assets/Screenshot 2025-12-06 210635.png](assets/Screenshot 2025-12-06 210635.png)
+### 番剧分析
+![assets/Screenshot 2025-12-06 210700.png](assets/Screenshot 2025-12-06 210700.png)
+### 动态分析
+![assets/Screenshot 2025-12-06 211112.png](assets/Screenshot 2025-12-06 211112.png)
+### 直播间分析
+![assets/Screenshot 2025-12-06 211200.png](assets/Screenshot 2025-12-06 211200.png)
+### 短链识别
+![assets/Screenshot 2025-12-06 210738.png](assets/Screenshot 2025-12-06 210738.png)
+
+
 ## 配置说明
 
 配置文件路径：`resources/analysis.plugin.properties`
