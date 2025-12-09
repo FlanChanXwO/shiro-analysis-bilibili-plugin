@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.gitub.shiroanalysisbilibiliplugin.cache.ExpiringCache;
 import com.gitub.shiroanalysisbilibiliplugin.config.PluginConfig;
 import com.gitub.shiroanalysisbilibiliplugin.utils.BiliUtils;
+import com.gitub.shiroanalysisbilibiliplugin.utils.FileUtil;
 import com.mikuac.shiro.annotation.GroupMessageHandler;
 import com.mikuac.shiro.annotation.MessageHandlerFilter;
 import com.mikuac.shiro.common.utils.MsgUtils;
@@ -127,7 +128,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                 if (file != null) {
                     logger.info("下载到视频，准备发送: {}", file.getAbsolutePath());
                     String videoMsg = MsgUtils.builder()
-                            .video("file:///" + file.getAbsolutePath(), Strings.EMPTY)
+                            .video(FileUtil.getFileUrlPrefix() + file.getAbsolutePath(), Strings.EMPTY)
                             .build();
                     bot.sendGroupMsg(groupId, videoMsg, false);
                     if (file.exists()) {
