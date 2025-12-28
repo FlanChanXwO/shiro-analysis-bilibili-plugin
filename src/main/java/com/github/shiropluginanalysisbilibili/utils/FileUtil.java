@@ -1,4 +1,4 @@
-package com.gitub.shiroanalysisbilibiliplugin.utils;
+package com.github.shiropluginanalysisbilibili.utils;
 
 /**
  * @author FlanChan (badapple495@outlook.com)

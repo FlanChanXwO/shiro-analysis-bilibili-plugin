@@ -1,29 +1,35 @@
-package com.gitub.shiroanalysisbilibiliplugin.plugins;
+package com.github.shiropluginanalysisbilibili.plugins;
 
+import cn.hutool.extra.spring.SpringUtil;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.gitub.shiroanalysisbilibiliplugin.cache.ExpiringCache;
-import com.gitub.shiroanalysisbilibiliplugin.config.PluginConfig;
-import com.gitub.shiroanalysisbilibiliplugin.utils.BiliUtils;
-import com.gitub.shiroanalysisbilibiliplugin.utils.FileUtil;
-import com.mikuac.shiro.annotation.GroupMessageHandler;
+import com.github.shiropluginanalysisbilibili.utils.BotUtils;
+import com.github.shiropluginanalysisbilibili.utils.FileUtil;
+import com.github.shiropluginanalysisbilibili.cache.ExpiringCache;
+import com.github.shiropluginanalysisbilibili.config.PluginConfig;
+import com.github.shiropluginanalysisbilibili.utils.BiliUtils;
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.mikuac.shiro.annotation.MessageHandlerFilter;
 import com.mikuac.shiro.common.utils.MsgUtils;
 import com.mikuac.shiro.core.Bot;
 import com.mikuac.shiro.core.BotPlugin;
 import com.mikuac.shiro.dto.event.message.GroupMessageEvent;
-import com.mikuac.shiro.enums.MsgTypeEnum;
+import okhttp3.HttpUrl;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 import org.apache.logging.log4j.util.Strings;
-import org.eclipse.sisu.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Import;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
@@ -38,80 +44,142 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
 
     private static final Logger logger = LoggerFactory.getLogger(AnalysisBilibiliPlugin.class);
 
-    private static final PluginConfig pluginConfig = PluginConfig.getInstance();
-
-    // 短链接正则
-    private static final String shortLinkRegex = "(https?://\\S+)";
+    private  final Gson gson = new Gson();
     // 触发正则
     private static final String REGEX =
             "^(?:(?:av|cv)\\d+|BV[a-zA-Z0-9]{10})|(?:b23\\.tv|bili(?:22|23|33|2233)\\.cn|\\.bilibili\\.com|QQ小程序(?:&amp;#93;|&#93;|\\])哔哩哔哩).{0,500}";
 
     private final Map<Long, ExpiringCache> analysisStat = new ConcurrentHashMap<>();
 
+    private final PluginConfig pluginConfig;
+
+    private final ObjectMapper mapper;
+
+    private final OkHttpClient client;
+
+    private final static String PLUGIN_NAME = "analysis-bilibili";
+
     public AnalysisBilibiliPlugin() {
         super();
-        logger.info("AnalysisBilibiliPlugin 配置信息: {}", pluginConfig.toString());
-        logger.info("AnalysisBilibiliPlugin 加载完成");
+        logger.info("{} 正在加载...", this.getClass().getSimpleName());
+        Environment env = SpringUtil.getBean(Environment.class);
+        ObjectMapper objectMapper = SpringUtil.getBean(ObjectMapper.class);
+        mapper = objectMapper != null ? objectMapper : new ObjectMapper();
+        OkHttpClient httpClient = SpringUtil.getBean(OkHttpClient.class);
+        client = httpClient != null ? httpClient : new OkHttpClient.Builder().build();
+        pluginConfig = PluginConfig.getFromEnv(env, PLUGIN_NAME);
+        logger.info("{} 配置信息: {}", pluginConfig, this.getClass().getSimpleName());
+        logger.info("{}} 加载完成", this.getClass().getSimpleName());
     }
 
+
     @Override
-    @GroupMessageHandler
     @MessageHandlerFilter(cmd = "http")
     public int onGroupMessage(Bot bot, GroupMessageEvent event) {
         // 插件已禁用，不进行任何行为
-        if (!pluginConfig.isEnable()) {
-            return 0;
+        if (!pluginConfig.getEnable()) {
+            return MESSAGE_IGNORE;
         }
 
         try {
             String msgText = event.getMessage();
-            // 内部进行正则匹配，严谨
-            Pattern patternTrigger = Pattern.compile(REGEX, Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-            Matcher matcherTrigger = patternTrigger.matcher(msgText);
-            if (!matcherTrigger.find()) {
-                // 不匹配触发正则，跳过
-                return 0;
-            }
-            logger.info("AnalysisBilibiliPlugin 触发: {}", msgText);
-            // 先尝试处理短链接 b23
-            if (msgText.toLowerCase().contains("b23.tv") || msgText.toLowerCase().contains("bili23.cn")) {
-                // 取出短链
-                Pattern pattern = Pattern.compile(shortLinkRegex);
-                Matcher matcher = pattern.matcher(msgText);
-                if (matcher.find()) {
-                    String shortLink = matcher.group(1);
-                    // 试 expand（包装在 try 中）
-                    try {
-                        String expanded = BiliUtils.expandShortLink(shortLink);
-                        if (expanded != null && !expanded.isEmpty()) {
-                            msgText = msgText.replace(shortLink, expanded);
+            String urlToParse = null; // 3. 定义一个变量，用于存放最终待解析的纯净URL
+
+            // ========================= 核心改造区域 开始 =========================
+
+            // 4. 优先判断是否为QQ小程序 (JSON CQ码)
+            if (msgText.trim().startsWith("[CQ:json")) {
+                logger.debug("检测到JSON CQ码，尝试作为QQ小程序进行解析...");
+
+                // 使用你的工具类将CQ码字符串解析为JsonObject
+                JsonObject cqJsonObj = BotUtils.parseCQToJsonObject(msgText);
+
+                // 检查解析是否成功，并逐层深入获取qqdocurl
+                if (cqJsonObj != null && cqJsonObj.has("data")) {
+                    JsonObject dataObj = cqJsonObj.getAsJsonObject("data");
+
+                    // QQ小程序的数据本身又是一个内嵌的JSON字符串，需要再次解析
+                    if (dataObj.has("data")) {
+                        String innerJsonStr = dataObj.get("data").getAsString();
+                        try {
+                            // 使用Gson解析内嵌的JSON字符串
+                            JsonObject innerData = gson.fromJson(innerJsonStr, JsonObject.class);
+
+                            // 安全地逐层获取 'qqdocurl'
+                            JsonElement metaEl = innerData.get("meta");
+                            if (metaEl != null && metaEl.isJsonObject()) {
+                                JsonElement detailEl = metaEl.getAsJsonObject().get("detail_1");
+                                if (detailEl != null && detailEl.isJsonObject()) {
+                                    JsonElement urlEl = detailEl.getAsJsonObject().get("qqdocurl");
+                                    if (urlEl != null && !urlEl.isJsonNull()) {
+                                        urlToParse = urlEl.getAsString();
+                                        logger.info("从QQ小程序中成功提取到URL: {}", urlToParse);
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            logger.warn("解析QQ小程序内嵌JSON失败", e);
                         }
-                    } catch (Exception e) {
-                        logger.debug("短链接展开失败: {}", e.getMessage());
                     }
+                }
+
+                if (urlToParse == null) {
+                    logger.warn("这是一个QQ小程序，但未能成功提取bilibili链接。");
+                    return MESSAGE_IGNORE;
+                }
+
+            } else {
+                // 5. 如果不是JSON CQ码，则执行原有的纯文本链接匹配逻辑
+                Pattern patternTrigger = Pattern.compile(REGEX, Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+                Matcher matcherTrigger = patternTrigger.matcher(msgText);
+                if (matcherTrigger.find()) {
+                    // 对于纯文本，直接将整个消息作为待解析内容
+                    urlToParse = msgText;
+                    logger.info("AnalysisBilibiliPlugin 触发 (纯文本): {}", msgText);
                 } else {
-                    logger.debug("未找到短链接，跳过展开");
-                    return 0;
+                    // 不匹配任何触发规则，跳过
+                    return MESSAGE_IGNORE;
                 }
             }
 
-            String[] extracted = BiliUtils.extract(msgText);
+            // ========================= 核心改造区域 结束 =========================
+
+            // 6. 后续所有操作都基于我们提取出的纯净URL (urlToParse)
+
+            // 先尝试处理短链接 b23
+            if (urlToParse.toLowerCase().contains("b23.tv") || urlToParse.toLowerCase().contains("bili23.cn")) {
+                // ... (短链展开逻辑，注意: 这里操作的对象是 urlToParse)
+                try {
+                    String expanded = expandShortLink(urlToParse); // 直接展开提取出的URL
+                    if (expanded != null && !expanded.isEmpty()) {
+                        urlToParse = expanded; // 更新为展开后的长链接
+                    }
+                } catch (Exception e) {
+                    logger.debug("短链接展开失败: {}", e.getMessage());
+                }
+            }
+
+            // 使用BiliUtils从纯净URL中提取信息
+            String[] extracted = BiliUtils.extract(urlToParse);
             String type = extracted[0];
             String api = extracted[1];
             String cvid = extracted[2];
             logger.debug("解析结果 type={} api={}", type, api);
             if (type == null || api == null) {
                 // 没有可解析的类型
-                return 0;
+                return MESSAGE_IGNORE;
             }
 
+            // ... 后续的去重检查、API调用、发送消息逻辑保持不变 ...
+            // (注意：确保这些逻辑使用解析后的 api, type 等变量，而不是原始的 msgText)
+
             long groupId = event.getGroupId();
-            // 去重检查：如果已存在则跳过
+            // 去重检查...
             ExpiringCache cache = analysisStat.computeIfAbsent(groupId, k -> new ExpiringCache(pluginConfig.getReanalysisTimeSeconds()));
-            String dedupKeyMarker = api; // 以调用的 api url 作为去重 key（足够唯一）
+            String dedupKeyMarker = api;
             if (cache.get(dedupKeyMarker)) {
                 logger.debug("重复解析，忽略: group={} url={}", groupId, api);
-                return 0;
+                return MESSAGE_IGNORE;
             }
             cache.set(dedupKeyMarker);
 
@@ -123,7 +191,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
             }
 
             // 如果是视频类型且配置允许，下载视频并发送
-            if (pluginConfig.isAnalysisVideoSend() && "video".equals(type)) {
+            if (pluginConfig.getAnalysisVideoSend() && "video".equals(type)) {
                 File file = downloadVideo(api);
                 if (file != null) {
                     logger.info("下载到视频，准备发送: {}", file.getAbsolutePath());
@@ -143,15 +211,15 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
         } catch (Exception ex) {
             logger.error("解析出错", ex);
         }
-        return 0;
+        return MESSAGE_IGNORE;
     }
 
     private String parseAndFormat(String type, String apiUrl, String cvid) {
         try {
-            JsonNode root = BiliUtils.httpGetJson(apiUrl);
-//            logger.debug("AnalysisBilibiliPlugin 解析 json 内容: {}", root.toPrettyString());
-//            logger.debug("AnalysisBilibiliPlugin 解析到的类型={} ", type);
-            if (!pluginConfig.isSkipVideoAnalysis() && "video".equals(type)) {
+            JsonNode root = httpGetJson(apiUrl);
+           logger.debug("AnalysisBilibiliPlugin 解析 json 内容: {}", root.toPrettyString());
+           logger.debug("AnalysisBilibiliPlugin 解析到的类型={} ", type);
+            if (!pluginConfig.getSkipVideoAnalysis() && "video".equals(type)) {
                 JsonNode data = root.path("data");
                 if (data.isMissingNode() || data.isNull()) {
                     return "无法获取视频信息（可能已被删除或不可见）";
@@ -182,7 +250,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                     sb.append("\n");
                 }
                 MsgUtils msg = MsgUtils.builder().text(sb.toString());
-                if (pluginConfig.isAnalysisDisplayImage()) {
+                if (pluginConfig.getAnalysisDisplayImage()) {
                     String picSrc = data.path("pic").asText("");
                     msg.img(BiliUtils.resizeImage(picSrc, pluginConfig.getImagesSize(), pluginConfig.getCoverImagesSize(), true));
                 }
@@ -203,7 +271,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                     sb.append("简介：").append(evaluate).append("\n");
                 }
                 MsgUtils msg = MsgUtils.builder().text(sb.toString());
-                if (pluginConfig.isAnalysisDisplayImage()) {
+                if (pluginConfig.getAnalysisDisplayImage()) {
                     String picSrc = res.path("cover").asText("");
                     msg.img(BiliUtils.resizeImage(picSrc, pluginConfig.getImagesSize(), pluginConfig.getCoverImagesSize(), true));
                 }
@@ -224,7 +292,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                 sb.append("人气：").append(BiliUtils.handleNum(online)).append("\n");
                 sb.append("链接：https://live.bilibili.com/").append(roomId).append("\n");
                 MsgUtils msg = MsgUtils.builder().text(sb.toString());
-                if (pluginConfig.isAnalysisDisplayImage()) {
+                if (pluginConfig.getAnalysisDisplayImage()) {
                     String picSrc = room.path("cover").asText("");
                     msg.img(BiliUtils.resizeImage(picSrc, pluginConfig.getImagesSize(), pluginConfig.getCoverImagesSize(), true));
                 }
@@ -245,7 +313,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                     sb.append("链接：https://www.bilibili.com/read/cv").append(cvid).append("\n");
                 }
                 MsgUtils msg = MsgUtils.builder().text(sb.toString());
-                if (pluginConfig.isAnalysisDisplayImage()) {
+                if (pluginConfig.getAnalysisDisplayImage()) {
                     String picSrc = data.path("cover").asText("");
                     msg.img(BiliUtils.resizeImage(picSrc, pluginConfig.getImagesSize(), pluginConfig.getCoverImagesSize(), true));
                 }
@@ -274,7 +342,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                 if ("MAJOR_TYPE_DRAW".equals(majorType)) {
 
                     JsonNode items = major.path("draw").path("items");
-                    if (pluginConfig.isAnalysisDisplayImage()) {
+                    if (pluginConfig.getAnalysisDisplayImage()) {
                         for (JsonNode item : items) {
                             String src = item.path("src").asText("");
                             msgBuilder.img(BiliUtils.resizeImage(src, pluginConfig.getImagesSize(), pluginConfig.getCoverImagesSize(), true));
@@ -301,7 +369,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                     String label = article.path("label").asText("");
 
                     ArrayNode covers = article.withArray("covers");
-                    if (pluginConfig.isAnalysisDisplayImage()) {
+                    if (pluginConfig.getAnalysisDisplayImage()) {
                         for (JsonNode cover : covers) {
                             String picSrc = cover.asText("");
                             msgBuilder.img(BiliUtils.resizeImage(picSrc, pluginConfig.getImagesSize(), pluginConfig.getCoverImagesSize(), true));
@@ -333,7 +401,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
 
     private File downloadVideo(String apiUrl) {
         try {
-            JsonNode root = BiliUtils.httpGetJson(apiUrl);
+            JsonNode root = httpGetJson(apiUrl);
             JsonNode data = root.path("data");
             if (data.isMissingNode() || data.isNull()) {
                 return null;
@@ -343,7 +411,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
 
             if (duration <= 600) {
                 String bvid = data.get("bvid").asText();
-                File video = BiliUtils.downloadBiliVideo(bvid, cid, duration);
+                File video = downloadBiliVideo(bvid, cid, duration);
 
                 return video;
             }
@@ -352,5 +420,123 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
             logger.error("下载视频失败 apiUrl=" + apiUrl, e);
             return null;
         }
+    }
+
+
+
+    public JsonNode httpGetJson(String url) throws IOException {
+        Request request = buildHttpRequest(url);
+        try (Response resp = client.newCall(request).execute()) {
+            if (!resp.isSuccessful()) {
+                throw new IOException("HTTP error " + resp.code() + " for " + url);
+            }
+            String body = resp.body().string();
+            return mapper.readTree(body);
+        }
+    }
+
+    private Request buildHttpRequest(String url) {
+        return new Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (compatible; BiliAnalysisBot/1.0)")
+                .header("Referer", "https://www.bilibili.com/") // 防盗链必加
+                .header("Cookie", pluginConfig.getCookie())
+                .build();
+    }
+
+    public String expandShortLink(String shortUrl) throws IOException {
+        Request request = new Request.Builder()
+                .url(shortUrl)
+                .header("User-Agent", "Mozilla/5.0 (compatible; BiliAnalysisBot/1.0)")
+                .build();
+        try (Response resp = client.newCall(request).execute()) {
+            // OkHttp 默认跟随重定向；最终 URL 可以从 resp.request().url()
+            HttpUrl finalUrl = resp.request().url();
+            return finalUrl.toString();
+        }
+    }
+
+
+
+    /**
+     * 下载 B 站视频
+     * @param bvid
+     * @param cid
+     * @param durationSec
+     * @return
+     * @throws Exception
+     */
+    public File downloadBiliVideo(String bvid, long cid, long durationSec) throws Exception {
+        // 限时判断
+        if (pluginConfig.getDurationSecLimit() > 0 && durationSec > pluginConfig.getDurationSecLimit()) {
+            return null;
+        }
+
+        String url = "https://api.bilibili.com/x/player/playurl?bvid=" +
+                bvid + "&cid=" + cid + "&qn=80&fnval=16";
+
+        JsonNode root = httpGetJson(url).get("data");
+        JsonNode dash = root.get("dash");
+
+        String videoUrl = dash.get("video").get(0).get("baseUrl").asText();
+        String audioUrl = dash.get("audio").get(0).get("baseUrl").asText();
+
+        File tempDir = new File(pluginConfig.getTmpPath());
+        tempDir.mkdirs();
+
+        File videoFile = new File(tempDir, bvid + "_v.mp4");
+        File audioFile = new File(tempDir, bvid + "_a.mp3");
+        File outputFile = new File(tempDir, bvid + ".mp4");
+
+        downloadResource(videoUrl, videoFile);
+        downloadResource(audioUrl, audioFile);
+
+        mergeAv(videoFile, audioFile, outputFile);
+
+        return outputFile;
+    }
+
+    /**
+     * 下载音视频资源
+     * @param url
+     * @param out
+     * @throws IOException
+     */
+    private void downloadResource(String url, File out) throws IOException {
+        Request req =  buildHttpRequest(url);
+        try (Response resp = client.newCall(req).execute()) {
+            if (!resp.isSuccessful()) {
+                throw new IOException("HTTP " + resp.code());
+            }
+            try (var in = resp.body().byteStream();
+                 var outStream = new FileOutputStream(out)) {
+                in.transferTo(outStream);
+            }
+        }
+    }
+
+
+    /**
+     * 使用 ffmpeg 合并音视频文件
+     * @param video
+     * @param audio
+     * @param output
+     * @throws Exception
+     */
+    private void mergeAv(File video, File audio, File output) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(
+                "ffmpeg", "-y",
+                "-i", video.getAbsolutePath(),
+                "-i", audio.getAbsolutePath(),
+                "-c:v", "copy",
+                "-c:a", "aac",
+                output.getAbsolutePath()
+        );
+        pb.inheritIO(); // 直接把 ffmpeg 输出绑定到控制台
+        Process process = pb.start();
+        process.waitFor();
+        // 合并完成后，删除单独的音频文件和视频文件
+        video.deleteOnExit();
+        audio.deleteOnExit();
     }
 }

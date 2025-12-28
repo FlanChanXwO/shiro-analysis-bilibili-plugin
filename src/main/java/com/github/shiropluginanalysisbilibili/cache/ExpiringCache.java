@@ -1,10 +1,10 @@
-package com.gitub.shiroanalysisbilibiliplugin.cache;
+package com.github.shiropluginanalysisbilibili.cache;
 
 import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
