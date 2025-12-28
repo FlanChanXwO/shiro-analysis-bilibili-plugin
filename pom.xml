@@ -10,7 +10,7 @@
     </parent>
 
     <packaging>jar</packaging>
-    <groupId>com.gitub</groupId>
+    <groupId>com.github</groupId>
     <artifactId>shiro-plugin-analysisBilibili</artifactId>
     <version>1.0.2</version>
 
