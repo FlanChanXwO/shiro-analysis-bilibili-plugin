@@ -31,6 +31,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -45,12 +46,13 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
     private static final Logger logger = LoggerFactory.getLogger(AnalysisBilibiliPlugin.class);
 
     private  final Gson gson = new Gson();
-    // 触发正则
     private static final String REGEX =
             "^(?:(?:av|cv)\\d+|BV[a-zA-Z0-9]{10})|(?:b23\\.tv|bili(?:22|23|33|2233)\\.cn|\\.bilibili\\.com|QQ小程序(?:&amp;#93;|&#93;|\\])哔哩哔哩).{0,500}";
 
-    private final Map<Long, ExpiringCache> analysisStat = new ConcurrentHashMap<>();
-
+    // 用于存放最近已完成解析的URL，实现10秒内防重复解析
+    private final ExpiringCache recentlyCompletedUrls;
+    // 用于防止同一个URL被并发处理的锁集合
+    private final Set<String> processingUrls = ConcurrentHashMap.newKeySet();
     private final PluginConfig pluginConfig;
 
     private final ObjectMapper mapper;
@@ -68,6 +70,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
         OkHttpClient httpClient = SpringUtil.getBean(OkHttpClient.class);
         client = httpClient != null ? httpClient : new OkHttpClient.Builder().build();
         pluginConfig = PluginConfig.getFromEnv(env, PLUGIN_NAME);
+        this.recentlyCompletedUrls = new ExpiringCache(pluginConfig.getReanalysisTimeSeconds());
         logger.info("{} 配置信息: {}", pluginConfig, this.getClass().getSimpleName());
         logger.info("{}} 加载完成", this.getClass().getSimpleName());
     }
@@ -170,42 +173,52 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                 return MESSAGE_IGNORE;
             }
 
-            // ... 后续的去重检查、API调用、发送消息逻辑保持不变 ...
-            // (注意：确保这些逻辑使用解析后的 api, type 等变量，而不是原始的 msgText)
-
             long groupId = event.getGroupId();
-            // 去重检查...
-            ExpiringCache cache = analysisStat.computeIfAbsent(groupId, k -> new ExpiringCache(pluginConfig.getReanalysisTimeSeconds()));
-            String dedupKeyMarker = api;
-            if (cache.get(dedupKeyMarker)) {
-                logger.debug("重复解析，忽略: group={} url={}", groupId, api);
+            String dedupKey = api; // 使用api作为URL的唯一标识
+            // 1. 检查是否在10秒冷却时间内
+            if (recentlyCompletedUrls.get(dedupKey)) {
+                logger.info("URL在冷却时间内，忽略重复解析: {}", dedupKey);
                 return MESSAGE_IGNORE;
             }
-            cache.set(dedupKeyMarker);
 
-            // 调用 API 并组织返回文本
-            String sendText = parseAndFormat(type, api, cvid);
-            if (sendText != null && !sendText.isEmpty()) {
-                // 发送文本到群
-                bot.sendGroupMsg(groupId, sendText, false);
+            // 2. 检查是否正在被处理，并尝试加锁
+            // processingUrls.add() 是一个原子操作，如果元素已存在，返回false
+            if (!processingUrls.add(dedupKey)) {
+                logger.info("URL正在被其它线程处理，忽略本次请求: {}", dedupKey);
+                return MESSAGE_IGNORE;
             }
 
-            // 如果是视频类型且配置允许，下载视频并发送
-            if (pluginConfig.getAnalysisVideoSend() && "video".equals(type)) {
-                File file = downloadVideo(api);
-                if (file != null) {
-                    logger.info("下载到视频，准备发送: {}", file.getAbsolutePath());
-                    String videoMsg = MsgUtils.builder()
-                            .video(FileUtil.getFileUrlPrefix() + file.getAbsolutePath(), Strings.EMPTY)
-                            .build();
-                    bot.sendGroupMsg(groupId, videoMsg, false);
-                    if (file.exists()) {
-                        boolean deleted = file.delete();
-                        if (!deleted) {
-                            logger.warn("下载后删除临时视频文件失败: {}", file.getAbsolutePath());
+            try {
+
+                // 调用 API 并组织返回文本
+                String sendText = parseAndFormat(type, api, cvid);
+                if (sendText != null && !sendText.isEmpty()) {
+                    // 发送文本到群
+                    bot.sendGroupMsg(groupId, sendText, false);
+                }
+
+                // 如果是视频类型且配置允许，下载视频并发送
+                if (pluginConfig.getAnalysisVideoSend() && "video".equals(type)) {
+                    File file = downloadVideo(api);
+                    if (file != null) {
+                        logger.info("下载到视频，准备发送: {}", file.getAbsolutePath());
+                        String videoMsg = MsgUtils.builder()
+                                .video(FileUtil.getFileUrlPrefix() + file.getAbsolutePath(), Strings.EMPTY)
+                                .build();
+                        bot.sendGroupMsg(groupId, videoMsg, false);
+                        if (file.exists()) {
+                            boolean deleted = file.delete();
+                            if (!deleted) {
+                                logger.warn("下载后删除临时视频文件失败: {}", file.getAbsolutePath());
+                            }
                         }
                     }
                 }
+            } finally {
+                // 3. 无论处理成功还是失败，都要在 finally 块中释放锁，并开启冷却计时
+                logger.debug("URL处理完成，释放锁并开始冷却计时: {}", dedupKey);
+                processingUrls.remove(dedupKey); // 释放处理锁
+                recentlyCompletedUrls.set(dedupKey); // 添加到“最近完成”缓存，开始10秒计时
             }
 
         } catch (Exception ex) {
