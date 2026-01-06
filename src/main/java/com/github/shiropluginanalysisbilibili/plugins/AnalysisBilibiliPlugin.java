@@ -210,7 +210,10 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                 // 调用 API 并组织返回文本
                 String msg = parseAndFormat(type, api, cvid);
                 if (msg != null && !msg.isEmpty()) {
-                    logger.warn("解析结果: {}", msg);
+                    // 发送文本到群
+                    bot.sendGroupMsg(groupId, msg, false);
+                } else {
+                    return MESSAGE_IGNORE;
                 }
 
                 // 如果是视频类型且配置允许，下载视频并发送
@@ -251,7 +254,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
             if (!pluginConfig.getSkipVideoAnalysis() && "video".equals(type)) {
                 JsonNode data = root.path("data");
                 if (data.isMissingNode() || data.isNull()) {
-                    return "无法获取视频信息（可能已被删除或不可见）";
+                    return null;
                 }
                 String title = data.path("title").asText("");
                 long aid = data.path("aid").asLong(0L);
@@ -287,7 +290,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
             } else if ("bangumi".equals(type)) {
                 JsonNode res = root.path("result");
                 if (res.isMissingNode()) {
-                    return "无法获取番剧信息";
+                    return null;
                 }
 
                 String title = res.path("title").asText("");
@@ -308,7 +311,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
             } else if ("live".equals(type)) {
                 JsonNode data = root.path("data");
                 if (data.isMissingNode()) {
-                    return "无法获取直播间信息";
+                    return null;
                 }
                 JsonNode room = data.path("room_info");
                 String title = room.path("title").asText("");
@@ -329,7 +332,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
             } else if ("article".equals(type)) {
                 JsonNode data = root.path("data");
                 if (data.isMissingNode()) {
-                    return "无法获取专栏信息";
+                    return null;
                 }
                 String title = data.path("title").asText("");
                 String author = data.path("author_name").asText("");
@@ -356,7 +359,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                     }
                 }
                 if (data.isMissingNode()) {
-                    return "无法获取动态信息";
+                    return null;
                 }
 
                 MsgUtils msgBuilder = MsgUtils.builder();
@@ -418,11 +421,11 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                 // ==========================================================
                 //              其他未处理类型（保证不崩溃）
                 // ==========================================================
-                return "暂不支持解析该类型动态：" + majorType;
+                return null;
             }
         } catch (Exception e) {
             logger.error("解析 API 失败 url=" + apiUrl, e);
-            return "bili 解析出错: " + e.getMessage();
+            return null;
         }
         return null;
     }
