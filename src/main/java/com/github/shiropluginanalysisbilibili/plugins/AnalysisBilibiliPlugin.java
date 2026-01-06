@@ -17,6 +17,7 @@ import com.mikuac.shiro.common.utils.MsgUtils;
 import com.mikuac.shiro.core.Bot;
 import com.mikuac.shiro.core.BotPlugin;
 import com.mikuac.shiro.dto.event.message.GroupMessageEvent;
+import com.mikuac.shiro.enums.MsgTypeEnum;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -46,8 +47,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
     private static final Logger logger = LoggerFactory.getLogger(AnalysisBilibiliPlugin.class);
 
     private  final Gson gson = new Gson();
-    private static final String REGEX =
-            "^(?:(?:av|cv)\\d+|BV[a-zA-Z0-9]{10})|(?:b23\\.tv|bili(?:22|23|33|2233)\\.cn|\\.bilibili\\.com|QQ小程序(?:&amp;#93;|&#93;|\\])哔哩哔哩).{0,500}";
+    private static final String REGEX = "(https?:\\/\\/(?:www\\.bilibili\\.com\\/(?:video|read)\\/[a-zA-Z0-9]+|b23\\.tv\\/[a-zA-Z0-9]+))|(?:(?:av|cv)\\d{1,12}|BV[a-zA-Z0-9]{10})|bili(22|23|33|2233)\\.cn|b23\\.tv|\\.bilibili\\.com|QQ小程序(?:&amp;#93;|&#93;|])哔哩哔哩";
 
     // 用于存放最近已完成解析的URL，实现10秒内防重复解析
     private final ExpiringCache recentlyCompletedUrls;
@@ -77,7 +77,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
 
 
     @Override
-    @MessageHandlerFilter(cmd = "http")
+    @MessageHandlerFilter(types = {MsgTypeEnum.text,MsgTypeEnum.json})
     public int onGroupMessage(Bot bot, GroupMessageEvent event) {
         // 插件已禁用，不进行任何行为
         if (!pluginConfig.getEnable()) {
