@@ -47,7 +47,12 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
     private static final Logger logger = LoggerFactory.getLogger(AnalysisBilibiliPlugin.class);
 
     private  final Gson gson = new Gson();
-    private static final String REGEX = "(https?:\\/\\/(?:www\\.bilibili\\.com\\/(?:video|read)\\/[a-zA-Z0-9]+|b23\\.tv\\/[a-zA-Z0-9]+))|(?:(?:av|cv)\\d{1,12}|BV[a-zA-Z0-9]{10})|bili(22|23|33|2233)\\.cn|b23\\.tv|\\.bilibili\\.com|QQ小程序(?:&amp;#93;|&#93;|])哔哩哔哩";
+    // 最终版正则：融合了宽泛触发和精确捕获
+    private static final String REGEX =
+            // 捕获组1：精确捕获我们需要的 URL 或 ID
+            "(https?:\\/\\/(?:www\\.bilibili\\.com\\/(?:video|read|bangumi)\\/[a-zA-Z0-9]+(?:\\?[^\\s]*)?|b23\\.tv\\/[a-zA-Z0-9]+(?:\\?[^\\s]*)?|live\\.bilibili\\.com\\/\\d+|t\\.bilibili\\.com\\/\\d+)|(?:av|cv)\\d{1,12}|BV[a-zA-Z0-9]{10})" +
+                    // `|` 或，后面是宽泛的关键词，用于确保即使URL不标准也能触发 find()
+                    "|b23\\.tv|bili(22|23|33|2233)\\.cn|\\.bilibili\\.com|QQ小程序(?:&amp;#93;|&#93;|])哔哩哔哩";
 
     // 用于存放最近已完成解析的URL，实现10秒内防重复解析
     private final ExpiringCache recentlyCompletedUrls;
@@ -133,14 +138,27 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
 
             } else {
                 // 5. 如果不是JSON CQ码，则执行原有的纯文本链接匹配逻辑
+                // 使用最终版正则表达式
                 Pattern patternTrigger = Pattern.compile(REGEX, Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
-                Matcher matcherTrigger = patternTrigger.matcher(msgText);
-                if (matcherTrigger.find()) {
-                    // 对于纯文本，直接将整个消息作为待解析内容
-                    urlToParse = msgText;
-                    logger.info("AnalysisBilibiliPlugin 触发 (纯文本): {}", msgText);
-                } else {
-                    // 不匹配任何触发规则，跳过
+                Matcher matcher = patternTrigger.matcher(msgText);
+
+                // 我们需要循环查找，因为一条消息里可能既有关键词又有真正的链接
+                while (matcher.find()) {
+                    // 关键：只关心捕获组1是否捕获到了内容
+                    String captured = matcher.group(1);
+
+                    // 如果 group(1) 不为 null，说明我们精确匹配到了需要的 URL 或 ID
+                    if (captured != null && !captured.isEmpty()) {
+                        urlToParse = captured;
+                        logger.info("AnalysisBilibiliPlugin 成功捕获到目标: {}", urlToParse);
+                        break; // 找到第一个就跳出循环
+                    }
+                }
+
+                // 如果循环结束后 urlToParse 仍然是 null，说明只匹配到了关键词，没有可解析的内容
+                if (urlToParse == null) {
+                    // 匹配到了关键词但没有有效链接/ID，跳过
+                    logger.debug("消息触发了关键词，但未找到可解析的URL或ID。");
                     return MESSAGE_IGNORE;
                 }
             }
@@ -151,7 +169,6 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
 
             // 先尝试处理短链接 b23
             if (urlToParse.toLowerCase().contains("b23.tv") || urlToParse.toLowerCase().contains("bili23.cn")) {
-                // ... (短链展开逻辑，注意: 这里操作的对象是 urlToParse)
                 try {
                     String expanded = expandShortLink(urlToParse); // 直接展开提取出的URL
                     if (expanded != null && !expanded.isEmpty()) {
