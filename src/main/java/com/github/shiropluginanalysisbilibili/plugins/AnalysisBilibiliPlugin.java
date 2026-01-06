@@ -208,10 +208,9 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
             try {
 
                 // 调用 API 并组织返回文本
-                String sendText = parseAndFormat(type, api, cvid);
-                if (sendText != null && !sendText.isEmpty()) {
-                    // 发送文本到群
-                    bot.sendGroupMsg(groupId, sendText, false);
+                String msg = parseAndFormat(type, api, cvid);
+                if (msg != null && !msg.isEmpty()) {
+                    logger.warn("解析结果: {}", msg);
                 }
 
                 // 如果是视频类型且配置允许，下载视频并发送
