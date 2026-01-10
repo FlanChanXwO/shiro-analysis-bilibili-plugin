@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 public class ExpiringCache {
     private final Set<String> cache = Collections.newSetFromMap(new ConcurrentHashMap<>());
     private final long expireSeconds;
-    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(5);
 
     public ExpiringCache(long expireSeconds) {
         this.expireSeconds = expireSeconds;
