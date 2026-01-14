@@ -88,6 +88,10 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
         if (!pluginConfig.getEnable()) {
             return MESSAGE_IGNORE;
         }
+        // 机器人自己发的忽略
+        if (bot.getSelfId() == event.getUserId()) {
+            return MESSAGE_IGNORE;
+        }
 
         try {
             String msgText = event.getMessage();
