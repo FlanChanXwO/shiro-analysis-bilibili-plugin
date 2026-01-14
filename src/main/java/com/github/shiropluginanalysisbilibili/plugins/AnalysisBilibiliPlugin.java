@@ -154,7 +154,6 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
                     // 如果 group(1) 不为 null，说明我们精确匹配到了需要的 URL 或 ID
                     if (captured != null && !captured.isEmpty()) {
                         urlToParse = captured;
-                        logger.info("AnalysisBilibiliPlugin 成功捕获到目标: {}", urlToParse);
                         break; // 找到第一个就跳出循环
                     }
                 }
