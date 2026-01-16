@@ -48,11 +48,17 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
 
     private  final Gson gson = new Gson();
     // 最终版正则：融合了宽泛触发和精确捕获
+// 修改 AnalysisBilibiliPlugin.java 的第 50-54 行
+
+    // 最终版正则：融合了宽泛触发和精确捕获
     private static final String REGEX =
             // 捕获组1：精确捕获我们需要的 URL 或 ID
-            "(https?:\\/\\/(?:www\\.bilibili\\.com\\/(?:video|read|bangumi)\\/[a-zA-Z0-9]+(?:\\?[^\\s]*)?|b23\\.tv\\/[a-zA-Z0-9]+(?:\\?[^\\s]*)?|live\\.bilibili\\.com\\/\\d+|t\\.bilibili\\.com\\/\\d+)|(?:av|cv)\\d{1,12}|BV[a-zA-Z0-9]{10})" +
+            "(https?:\\/\\/(?:www\\.bilibili\\.com\\/(?:video|read|bangumi)\\/[a-zA-Z0-9]+(?:\\?[^\\s]*)?|b23\\.tv\\/[a-zA-Z0-9]+(?:\\?[^\\s]*)?|live\\.bilibili\\.com\\/\\d+|t\\.bilibili\\.com\\/\\d+)" +
+                    // [修改处]：为 av/cv 和 BV 号添加 \\b 单词边界，防止匹配到 URL 参数、Token 或 base64 中的随机字符串
+                    "|\\b(?:av|cv)\\d{1,12}\\b|\\bBV[a-zA-Z0-9]{10}\\b)" +
                     // `|` 或，后面是宽泛的关键词，用于确保即使URL不标准也能触发 find()
                     "|b23\\.tv|bili(22|23|33|2233)\\.cn|\\.bilibili\\.com|QQ小程序(?:&amp;#93;|&#93;|])哔哩哔哩";
+
 
     // 用于存放最近已完成解析的URL，实现10秒内防重复解析
     private final ExpiringCache recentlyCompletedUrls;
@@ -82,7 +88,7 @@ public class AnalysisBilibiliPlugin extends BotPlugin {
 
 
     @Override
-    @MessageHandlerFilter(types = {MsgTypeEnum.text,MsgTypeEnum.json})
+    @MessageHandlerFilter(types = {MsgTypeEnum.text, MsgTypeEnum.json})
     public int onGroupMessage(Bot bot, GroupMessageEvent event) {
         // 插件已禁用，不进行任何行为
         if (!pluginConfig.getEnable()) {
